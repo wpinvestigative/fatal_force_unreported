@@ -1,0 +1,213 @@
+---
+title: "Analyzing your own police department"
+author: Andrew Ba Tran, The Washington Post
+output: html_document
+---
+
+This will walk you through how to analyze a specific police department using data from the FBI Uniform Crime Reporting program and The Washington Post's [Fatal Force](https://www.washingtonpost.com/graphics/investigations/police-shootings-database/) project [[github]](https://github.com/washingtonpost/data-police-shootings). This was part of the [story](): As fatal police shootings increase, more go unreported
+
+## First, identify your police department's ORI code
+
+### 1. Sign up for an API key to access FBI's data
+
+Before you proceed, please [sign up for an API key](https://api.data.gov/signup/) on data.gov.
+
+Here's the [documentation](https://crime-data-explorer.fr.cloud.gov/pages/docApi) for the different FBI crime data endpoints.
+
+### 2. Set up your api key
+
+```{r api_key, eval=F}
+fbi_key <- "XXXX"
+```
+
+```{r setkey, echo=F}
+source("fbi_key.R")
+```
+
+### 3. Narrow down your state of choice
+
+```{r state_abb}
+state_abb <- "CO"
+```
+
+```{r department_data, warning=F, message=F}
+# Loading the appropriate libraries
+
+library(tidyverse)
+library(lubridate)
+library(jsonlite)
+library(DT)
+library(knitr)
+
+# Importing the json data based off the API
+state_df <- fromJSON(paste0("https://api.usa.gov/crime/fbi/sapi/api/agencies/byStateAbbr/", str_to_upper(state_abb), "?API_KEY=", fbi_key))
+
+state_df <- state_df$results
+
+# dropping a few columns for display purposes
+state_df %>% 
+  select(-state_name, -nibrs, -nibrs_start_date, -region_desc, -division_name) %>% 
+  datatable()
+```
+Above, we have all the agency identification numbers from the state we specified. 
+
+### 4. Export the state dataframe as a spreadsheet
+
+Save the spreadsheet for easier reference, if you'd like.
+
+```{r export1, eval=F}
+write_csv(state_df, paste0(state_abb, "_oricodes.csv"), na="")
+```
+
+You should be able to narrow down the law enforcement agency of your choice through the `agency_name` column.
+
+Here's how.
+
+### 5. Example: Denver
+
+```{r filter}
+# saving the name of an agency we want to look up
+department_search <- "denver police"
+
+# filtering out the oricode from the imported state data based on the agency name
+ori_only <- state_df %>% 
+  filter(str_detect(str_to_lower(agency_name), str_to_lower(department_search))) %>% 
+  pull(ori)
+
+ori_only
+```
+
+Now we know that `r str_to_title(department_search)`'s ori code is **`r ori_only`**.
+
+## Next, get employment data on the agency
+
+### 1. Import the data from a new API endpoint
+
+You'll need 3 arguments:
+
+* oricode
+* beginning year
+* end year
+
+```{r employees}
+start <- 2015
+end <- 2021
+
+emp_url <- paste0("https://api.usa.gov/crime/fbi/sapi/api/police-employment/agencies/", ori_only, "/", start, "/", end, "?API_KEY=", fbi_key)
+
+emp_list <- fromJSON(emp_url)
+
+
+emp_list <- emp_list$results
+
+# dropping a few columns for display purposes
+
+emp_list_df <- emp_list %>% 
+  select(ori, agency_name_edit, year=data_year, population, agency_name_edit, female_officer_ct, male_officer_ct) %>% 
+  # calculating total officer count by adding female and male officer counts
+  mutate(officer_count=female_officer_ct+male_officer_ct) %>% 
+  mutate(year=as.numeric(year))
+
+
+emp_list_df %>% 
+  datatable()
+```
+
+Officer counts are necessary to calculate fatal police shootings per officer.
+
+**FBI's agency-level police-involved shootings statistics**
+
+The FBI's API does not give the level of detail necessary to isolate at an agency level officer-involved justifiable homicides from civilian-involved ones. 
+
+Going down this path of analysis will require pulling the full Expanded Homicide [data set](https://crime-data-explorer.fr.cloud.gov/pages/home) from the FBI's [Crime Data Explorer site](https://crime-data-explorer.fr.cloud.gov/pages/home). Alternatively, [Jacob Kaplan](https://jacobdkaplan.weebly.com/)'s Concatenated UCR files from 1976-2020 are also [available](https://www.openicpsr.org/openicpsr/project/100699/version/V11/view). A summarized version from the Post of homicide totals and officer shootings by agency by year can be found [here](data/shr.csv).
+
+## Downloading Fatal Force data specific to an agency
+
+### 1. Import the relationship file between Fatal Force ids and oricodes
+
+Before it recently connected department names to federal ori codes, The Post used internal id numbers to identify law enforcement agencies.
+
+Joining the FBI data with the Post data requires the following crosswalk file.
+
+```{r download1, warning=F, message=F}
+fatal_force_ag <- read_csv("https://github.com/washingtonpost/data-police-shootings/raw/master/v2/fatal-police-shootings-agencies.csv")
+
+# showing the first five rows
+
+fatal_force_ag %>% 
+  slice(1:5) %>% 
+  datatable()
+```
+
+This table shows the total shootings in the Post's Fatal Force data by police department starting in 2015 until today.
+
+Grab the `id` for the police agency we're interested in based on the oricode identified above. *Using the oricode as a way to filter is better than the agency name because there may be inconsistent spellings between the Fatal Force and FBI data sets.*
+
+```{r boston_only}
+#Using string detect instead of == because there are some agencies we grouped multiple oricodes for simplicity, ie. state police
+
+fatal_force_id <- fatal_force_ag %>% 
+  filter(str_detect(ori_only, oricodes)) %>% 
+  pull(id) 
+
+fatal_force_id
+```
+
+### 1. Download Fatal Force data and filter
+
+Now that we have the department id, we can download the Fatal Force data and filter it to that specific agency.
+
+Some shootings involve more than agency, so we need to transform the data a little to split them up individually.
+
+*Note: `id` from the department data is `agency_ids` in the shootings data*
+
+```{r download2, warning=F, message=F}
+fatal_force_df <- read_csv("https://github.com/washingtonpost/data-police-shootings/raw/master/v2/fatal-police-shootings-data.csv")
+
+# Splitting out the incidents with multiple departments so they stand alone and can then be filtered successfully
+
+fatal_force_df <- separate_rows(fatal_force_df, agency_ids, convert = TRUE)
+
+# Now we can filter without worry of leaving any out
+fatal_force_df <- fatal_force_df %>% 
+  filter(agency_ids==fatal_force_id) 
+
+# Showing a selection of the columns (not all)
+fatal_force_df %>% 
+  select(id, agency_ids, date, flee_status, armed_with, city, state, name, age, gender, race ) %>% 
+  kable()
+```
+
+These are all the police shootings tracked by the Post for the specific department.
+
+Now, we count up the shootings by year and join it with the FBI data
+
+### 2. Summarize by year and join with employment data
+
+```{r summarize}
+# creating a new year column based on the year
+fatal_force_df_annual <- fatal_force_df %>% 
+  mutate(year=year(date)) %>%
+  count(year, name="fatal_force")
+
+kable(fatal_force_df_annual)
+
+# join with the FBI data
+
+fatal_force_df_joined <- fatal_force_df_annual %>% 
+  full_join(emp_list_df) %>% 
+  mutate(per1ko=fatal_force/officer_count*1000) %>% 
+  filter(year!=2022)
+
+kable(fatal_force_df_joined)
+
+```
+
+### 3. Calculating average annual rate
+
+```{r average}
+average_annual <- sum(fatal_force_df_joined$per1ko, na.rm = T)/length(fatal_force_df_joined)
+
+print(paste0(str_to_title(department_search), " average shootings per 1,000 officers: ", round(average_annual, 2)))
+```
+
