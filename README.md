@@ -2,7 +2,7 @@
 
 # About this story
 
-Data behind the Washington Post [story](): As fatal police shootings increase, more go unreported
+Data behind the Washington Post [story](https://www.washingtonpost.com/investigations/interactive/2022/fatal-police-shootings-unreported/): As fatal police shootings increase, more go unreported
 
 From The Washington Post's [Fatal Force](https://www.washingtonpost.com/graphics/investigations/police-shootings-database/) project [[github]](https://github.com/washingtonpost/data-police-shootings).
 
@@ -44,6 +44,5 @@ Reporters: [Andrew Ba Tran](https://www.washingtonpost.com/people/andrew-ba-tran
 
 Editors: Meghan Hoyer and Sarah Childress
 
-Jennifer Jenkins, Paige Moody, and Julie Tate contributed to this report.
-
+Jennifer Jenkins, Paige Moody, Julie Tate, Steven Rich, Monika Mathur and Razzan Nakhlawi contributed to this report.
 

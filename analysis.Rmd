@@ -4,7 +4,7 @@ author: Andrew Ba Tran, The Washington Post
 output: html_document
 ---
 
-This will walk you through how to analyze a specific police department using data from the FBI Uniform Crime Reporting program and The Washington Post's [Fatal Force](https://www.washingtonpost.com/graphics/investigations/police-shootings-database/) project [[github]](https://github.com/washingtonpost/data-police-shootings). This was part of the [story](): As fatal police shootings increase, more go unreported
+This will walk you through how to analyze a specific police department using data from the FBI Uniform Crime Reporting program and The Washington Post's [Fatal Force](https://www.washingtonpost.com/graphics/investigations/police-shootings-database/) project [[github]](https://github.com/washingtonpost/data-police-shootings). This was part of the [story](https://www.washingtonpost.com/investigations/interactive/2022/fatal-police-shootings-unreported/): As fatal police shootings increase, more go unreported
 
 ## First, identify your police department's ORI code
 
@@ -197,13 +197,16 @@ kable(fatal_force_df_annual)
 fatal_force_df_joined <- fatal_force_df_annual %>% 
   full_join(emp_list_df) %>% 
   mutate(per1ko=fatal_force/officer_count*1000) %>% 
-  filter(year!=2022)
+  filter(year!=2022) # taking out 2022 data because 2022 FBI data doesn't exist yet
 
 kable(fatal_force_df_joined)
 
 ```
 
 ### 3. Calculating average annual rate
+
+It's useful to have a single number, which is why we average the annual rate. This minimizes the intensity of outlier years but for comparison purposes, we also limit the rates of the smallest 5% of agencies in officer count in our interactive. Here's how to get the rate.
+
 
 ```{r average}
 average_annual <- sum(fatal_force_df_joined$per1ko, na.rm = T)/length(fatal_force_df_joined)
